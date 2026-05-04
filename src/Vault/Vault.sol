@@ -174,6 +174,13 @@ contract Vault is IVault, Ownable2Step, ReentrancyGuard, Pausable {
     {
         if (shares == 0) revert ZeroAmount();
         AssetConfig storage config = _requireWhitelistedAsset(asset);
+
+        // Snapshot the WAD claim against the live active pool before fee accrual.
+        // The accrual below can rebase the share supply via deferred fee minting,
+        // and binding the request to the entry-time pool keeps the settlement
+        // value consistent with the pool the caller observed at submission time.
+        uint256 wadOwed = _computeAssets(shares, totalShares, _activeManagedWad());
+
         _accrueFees(asset);
         _materializeUnboundFeeShares(msg.sender, asset);
         _requireShareAsset(msg.sender, asset);
@@ -184,7 +191,6 @@ contract Vault is IVault, Ownable2Step, ReentrancyGuard, Pausable {
         uint256 availableShares = _userShares[msg.sender];
         if (shares > availableShares) revert InsufficientShares(shares, availableShares);
 
-        uint256 wadOwed = _computeAssets(shares, totalShares, _activeManagedWad());
         uint256 reservedAmount = _fromWad(wadOwed, config.decimals);
         if (wadOwed != 0 && reservedAmount == 0) revert ZeroAmount();
         uint256 effectiveWadOwed = _toWad(reservedAmount, config.decimals);
